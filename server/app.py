@@ -20,23 +20,22 @@ migrate = Migrate(app, db)
 
 db.init_app(app)
 
-# Routes
-
 # Root route
 @app.route('/')
 def index():
     return '<h1>Code challenge</h1>'
 
-# Get all heroes
 @app.route('/heroes', methods=['GET'])
 def get_heroes():
-    try:
-        heroes = Hero.query.all()
-        return jsonify([hero.to_dict(include_hero_powers=False) for hero in heroes]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    heroes = Hero.query.all()
+    hero_data = [{
+        'id': hero.id,
+        'name': hero.name,
+        'super_name': hero.super_name
+    } for hero in heroes]
+    return jsonify(hero_data)
 
-# Get a specific hero by ID
+# Get hero by ID
 @app.route('/heroes/<int:id>', methods=['GET'])
 def get_hero(id):
     try:
@@ -57,7 +56,7 @@ def get_powers():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Get a specific power by ID
+# Get by ID
 @app.route('/powers/<int:id>', methods=['GET'])
 def get_power(id):
     try:
@@ -69,7 +68,7 @@ def get_power(id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Create a new power
+# new power
 @app.route('/powers', methods=['POST'])
 def create_power():
     data = request.get_json()
@@ -82,30 +81,31 @@ def create_power():
     db.session.add(power)
     db.session.commit()
     return jsonify(power.to_dict()), 201
-
-# Update a power's description
-@app.route('/powers/<int:id>', methods=['PATCH'])
-def update_power(id):
-    power = Power.query.get(id)
+# update power
+@app.route('/powers/<int:power_id>', methods=['PATCH'])
+def update_power(power_id):
+    power = Power.query.get(power_id)
     if power:
-        data = request.get_json()
-        if 'description' in data:
-            if not isinstance(data['description'], str) or len(data['description']) < 20:
-                return jsonify({"error": "must be a string of at least 20 characters long"}), 400
-            power.description = data['description']
+        try:
+            data = request.get_json()
+            power.description = data.get('description')
             db.session.commit()
-            return jsonify(power.to_dict()), 200
-        else:
-            return jsonify({"error": "Description is required"}), 400
+            return jsonify({
+                'id': power.id,
+                'name': power.name,
+                'description': power.description
+            })
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'errors': ['Validation errors']}), 400
     else:
-        return jsonify({"error": "Power not found"}), 404
+        return jsonify({'error': 'Power not found'}), 404
 
-# Create a new hero-power association
+# Create new hero-power
 @app.route('/hero_powers', methods=['POST'])
 def create_hero_power():
     data = request.get_json()
 
-    # Check required fields
     if 'strength' not in data or 'hero_id' not in data or 'power_id' not in data:
         return jsonify({"errors": ["validation errors"]}), 400
     
@@ -124,6 +124,6 @@ def create_hero_power():
     except Exception as e:
         return jsonify({"errors": [str(e)]}), 400
 
-# Run the app
+
 if __name__ == '__main__':
     app.run(port=5555, debug=True)

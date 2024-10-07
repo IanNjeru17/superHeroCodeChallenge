@@ -5,7 +5,7 @@ from sqlalchemy_serializer import SerializerMixin
 
 db = SQLAlchemy()
 
-# Hero Model
+
 class Hero(db.Model, SerializerMixin):
     __tablename__ = 'heroes'
 
@@ -17,7 +17,6 @@ class Hero(db.Model, SerializerMixin):
     hero_powers = db.relationship('HeroPower', backref='hero', cascade='all, delete-orphan')
     powers = association_proxy('hero_powers', 'power')
 
-    # Serialize rules to exclude recursion
     serialize_rules = ('-hero_powers.hero',)
 
     def to_dict(self):
@@ -25,7 +24,6 @@ class Hero(db.Model, SerializerMixin):
             "id": self.id,
             "name": self.name,
             "super_name": self.super_name,
-            # Include hero_powers in the serialized output
             "hero_powers": [hero_power.to_dict() for hero_power in self.hero_powers],
             "powers": [power.to_dict() for power in self.powers]
         }
@@ -33,7 +31,7 @@ class Hero(db.Model, SerializerMixin):
     def __repr__(self):
         return f'<Hero {self.id}: {self.name}>'
 
-# Power Model
+
 class Power(db.Model, SerializerMixin):
     __tablename__ = 'powers'
 
@@ -71,10 +69,9 @@ class HeroPower(db.Model, SerializerMixin):
     hero_id = db.Column(db.Integer, db.ForeignKey('heroes.id'))
     power_id = db.Column(db.Integer, db.ForeignKey('powers.id'))
 
-    # Ensure proper serialization rules
+    
     serialize_only = ('id', 'strength', 'hero_id', 'power_id')
 
-    # Validation for strength values
     @validates('strength')
     def validate_strength(self, key, value):
         if value not in ['Strong', 'Weak', 'Average']:
@@ -86,7 +83,7 @@ class HeroPower(db.Model, SerializerMixin):
             "id": self.id,
             "strength": self.strength,
             "hero_id": self.hero_id,
-            "power": self.power.to_dict()  # Include power details in the serialized output
+            "power": self.power.to_dict() 
         }
 
     def __repr__(self):
