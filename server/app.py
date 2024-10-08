@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 from flask_migrate import Migrate
+from flask_restful import Api, Resource
 from models import db, Hero, Power, HeroPower
 import os
 
@@ -9,7 +10,7 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DATABASE = os.environ.get(
     "DB_URI", f"sqlite:///{os.path.join(BASE_DIR, 'app.db')}")
 
-# Initialize the Flask app and its configuration
+# Initialize the Flask app 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -38,25 +39,22 @@ def get_heroes():
 # Get hero by ID
 @app.route('/heroes/<int:id>', methods=['GET'])
 def get_hero(id):
-    try:
-        hero = Hero.query.get(id)
-        if hero:
-            return jsonify(hero.to_dict(include_hero_powers=True)), 200
-        else:
-            return jsonify({"error": "Hero not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    hero = Hero.query.filter(Hero.id==id).first()
+    if not hero:
+        error_body = {
+            "error": "Hero not found"
+            }
+        return make_response(error_body, 404)
+    
+    return make_response(hero.to_dict(), 200)
 
 # Get all powers
-@app.route('/powers', methods=['GET'])
-def get_powers():
-    try:
-        powers = Power.query.all()
-        return jsonify([power.to_dict() for power in powers]), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+@app.route('/powers')
+def powers():
+    powers = [power.to_dict(only=('description', 'id', 'name')) for power in Power.query.all()]
+    return make_response(powers, 200)
 
-# Get by ID
+# Get power by ID
 @app.route('/powers/<int:id>', methods=['GET'])
 def get_power(id):
     try:
@@ -66,64 +64,65 @@ def get_power(id):
         else:
             return jsonify({"error": "Power not found"}), 404
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": str(e)}), 404
 
-# new power
-@app.route('/powers', methods=['POST'])
-def create_power():
-    data = request.get_json()
-    if 'description' not in data:
-        return jsonify({"error": "Description is required"}), 400
-    if not isinstance(data['description'], str) or len(data['description']) < 20:
-        return jsonify({"error": "Description must be a string of at least 20 characters long"}), 400
+@app.route('/powers/<int:id>',  methods=['GET', 'PATCH'])
+def powers_by_id(id):
+    power = Power.query.filter(Power.id==id).first()
+    if not power:
+        error_body = {
+            "error": "Power not found"
+            }
+        return make_response(error_body, 404)
+    if request.method == 'GET':
+        return make_response(power.to_dict(only=('description', 'id', 'name')), 200)
+    elif request.method == 'PATCH':
+        validation_errors = []
 
-    power = Power(description=data['description'])
-    db.session.add(power)
-    db.session.commit()
-    return jsonify(power.to_dict()), 201
-# update power
-@app.route('/powers/<int:power_id>', methods=['PATCH'])
-def update_power(power_id):
-    power = Power.query.get(power_id)
-    if power:
-        try:
-            data = request.get_json()
-            power.description = data.get('description')
-            db.session.commit()
-            return jsonify({
-                'id': power.id,
-                'name': power.name,
-                'description': power.description
-            })
-        except Exception as e:
-            db.session.rollback()
-            return jsonify({'errors': ['Validation errors']}), 400
-    else:
-        return jsonify({'error': 'Power not found'}), 404
+        # Update power attributes and validate
+        for attr in request.json:
+            if attr == 'description':
+                description_value = request.json.get(attr)
+                if not isinstance(description_value, str) or len(description_value) < 20:
+                    validation_errors.append("validation errors")
+            else:
+                setattr(power, attr, request.json.get(attr))
+        if validation_errors:
+            return make_response({"errors": validation_errors}, 400)  
 
-# Create new hero-power
-@app.route('/hero_powers', methods=['POST'])
-def create_hero_power():
-    data = request.get_json()
+        # Update valid fields and commit changes
+        for attr in request.json:
+            setattr(power, attr, request.json.get(attr))
 
-    if 'strength' not in data or 'hero_id' not in data or 'power_id' not in data:
-        return jsonify({"errors": ["validation errors"]}), 400
-    
-    if data['strength'] not in ['Strong', 'Weak', 'Average']:
-        return jsonify({"error": "validation errors"}), 400
+        db.session.commit()
+        return make_response(power.to_dict(), 200)
 
-    try:
+@app.route('/hero_powers', methods=['GET', 'POST'])
+def hero_powers():
+    if request.method == 'GET':
+        hero_power = HeroPower.query.all()
+        return make_response([hero_power.to_dict() for hero_power in hero_power], 200)
+
+    elif request.method == 'POST':
+        strength = request.json.get('strength')
+        power_id = request.json.get('power_id')
+        hero_id = request.json.get('hero_id')
+
+        #Could not figure out how to import validation
+        valid_strengths = {'Strong', 'Weak', 'Average'}
+        if strength not in valid_strengths:
+            return make_response({"errors": ["validation errors"]}, 400)
+
+        # Create a new HeroPower instance
         hero_power = HeroPower(
-            strength=data['strength'],
-            hero_id=data['hero_id'],
-            power_id=data['power_id']
+            strength=strength,
+            power_id=power_id,
+            hero_id=hero_id
         )
+
         db.session.add(hero_power)
         db.session.commit()
-        return jsonify(hero_power.to_dict()), 201
-    except Exception as e:
-        return jsonify({"errors": [str(e)]}), 400
-
-
+        return make_response(hero_power.to_dict(), 200)
+    
 if __name__ == '__main__':
     app.run(port=5555, debug=True)
